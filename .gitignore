@@ -1,0 +1,29 @@
+# 敏感密钥文件
+ssh_key
+ssh_key.pub
+bid_key
+toubiao.pem
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# 运行时数据（每日抓取结果不提交到仓库）
+bids_data.json
+data/
+
+# 工具
+cloudflared.exe
+
+# 系统
+.DS_Store
+Thumbs.db

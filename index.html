@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>北京市养老服务全业务线招标监控系统</title>
+<!-- 邮件由 Python 后端 SMTP 发送，无需前端 SDK -->
+<style>
+  :root {
+    --bg: #f4f6f9; --card-bg: #fff; --text: #1a1a2e; --text-secondary: #6b7280;
+    --accent: #2563eb; --accent-hover: #1d4ed8; --danger: #dc2626; --warning: #f59e0b;
+    --success: #10b981; --border: #e5e7eb; --radius: 8px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08); --shadow-lg: 0 4px 6px rgba(0,0,0,0.07);
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:var(--bg);color:var(--text);line-height:1.6;min-height:100vh}
+  .top-bar{background:linear-gradient(135deg,#1e3a5f 0%,#2563eb 100%);color:#fff;padding:16px 32px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;box-shadow:0 2px 8px rgba(0,0,0,0.15);position:sticky;top:0;z-index:100}
+  .top-bar h1{font-size:1.25rem;font-weight:600}
+  .top-bar .date-badge{background:rgba(255,255,255,0.15);padding:6px 14px;border-radius:20px;font-size:0.9rem}
+  .status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+  .status-dot.online{background:#10b981}.status-dot.offline{background:#ef4444}.status-dot.fetching{background:#f59e0b;animation:pulse 1s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+  .container{max-width:1320px;margin:0 auto;padding:24px 20px}
+  .toolbar{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:20px;align-items:center}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border:1px solid var(--border);border-radius:var(--radius);font-size:0.9rem;font-weight:500;cursor:pointer;background:var(--card-bg);color:var(--text);transition:all 0.2s;white-space:nowrap;-webkit-user-select:none;user-select:none}
+  .btn:hover{box-shadow:var(--shadow-lg);transform:translateY(-1px)}
+  .btn:active{transform:translateY(0)}
+  .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .btn.primary:hover{background:var(--accent-hover)}
+  .btn.success{background:var(--success);color:#fff;border-color:var(--success)}
+  .btn:disabled{opacity:0.5;cursor:not-allowed;pointer-events:none}
+  .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:20px}
+  .stat-card{background:var(--card-bg);border-radius:var(--radius);padding:18px 20px;box-shadow:var(--shadow);border-left:4px solid var(--accent)}
+  .stat-card.urgent{border-left-color:var(--danger)}.stat-card.warn{border-left-color:var(--warning)}
+  .stat-card .stat-num{font-size:2rem;font-weight:700;line-height:1;margin-bottom:4px}
+  .stat-card .stat-label{font-size:0.85rem;color:var(--text-secondary)}
+  .stat-card.urgent .stat-num{color:var(--danger)}.stat-card.warn .stat-num{color:var(--warning)}
+  .filter-bar{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:20px;align-items:center}
+  .filter-bar select,.filter-bar input{padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius);font-size:0.9rem;background:var(--card-bg);color:var(--text);min-width:140px}
+  .config-panel{background:var(--card-bg);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px;margin-bottom:20px;display:none}
+  .config-panel.open{display:block}
+  .config-panel h3{font-size:1rem;margin-bottom:14px;border-bottom:1px solid var(--border);padding-bottom:10px}
+  .config-row{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:12px;align-items:center}
+  .config-row label{font-size:0.85rem;font-weight:500;color:var(--text-secondary);min-width:100px}
+  .config-row input{flex:1;min-width:200px;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius);font-size:0.85rem;font-family:'SF Mono',Consolas,monospace}
+  .config-row .hint{font-size:0.78rem;color:var(--text-secondary);width:100%}
+  .config-row .hint a{color:var(--accent)}
+  .table-wrapper{background:var(--card-bg);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;margin-bottom:24px}
+  .table-header-bar{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:10px}
+  .table-header-bar h2{font-size:1.05rem;font-weight:600}
+  .table-header-bar .result-count{font-size:0.85rem;color:var(--text-secondary)}
+  table{width:100%;border-collapse:collapse;font-size:0.88rem}
+  thead th{background:#f9fafb;padding:12px 14px;text-align:left;font-weight:600;color:var(--text-secondary);border-bottom:2px solid var(--border);white-space:nowrap;cursor:pointer;-webkit-user-select:none;user-select:none}
+  thead th:hover{color:var(--accent)}
+  tbody td{padding:12px 14px;border-bottom:1px solid var(--border);vertical-align:middle}
+  tbody tr:hover{background:#f8fafc}
+  tbody tr.seen{opacity:0.55}
+  tbody tr.seen td.title-cell,.seen td.title-cell a{text-decoration:line-through;text-decoration-color:#9ca3af}
+  .cb-cell{width:40px;text-align:center}
+  .cb-cell input[type="checkbox"]{width:17px;height:17px;cursor:pointer;accent-color:var(--accent)}
+  .title-cell{max-width:400px}.title-cell a{color:var(--accent);text-decoration:none;font-weight:500;word-break:break-all}.title-cell a:hover{text-decoration:underline}.title-cell a:visited{color:#7c3aed}
+  .urgency-badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;white-space:nowrap}
+  .urgency-badge.critical{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
+  .urgency-badge.warning{background:#fffbeb;color:#d97706;border:1px solid #fde68a}
+  .urgency-badge.normal{background:#f0fdf4;color:#059669;border:1px solid #a7f3d0}
+  .deadline-cell{white-space:nowrap;font-family:'SF Mono',Consolas,monospace;font-size:0.82rem}
+  .source-cell{font-size:0.82rem;color:var(--text-secondary)}
+  .empty-state{text-align:center;padding:60px 20px;color:var(--text-secondary)}
+  .loading-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.7);z-index:200;justify-content:center;align-items:center;flex-direction:column;gap:16px}
+  .loading-overlay.active{display:flex}
+  .spinner{width:40px;height:40px;border:4px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .toast{position:fixed;bottom:30px;right:30px;padding:12px 24px;border-radius:var(--radius);color:#fff;font-size:0.9rem;font-weight:500;z-index:300;box-shadow:var(--shadow-lg);animation:slideIn 0.3s ease;max-width:400px}
+  .toast.success{background:#059669}.toast.error{background:#dc2626}.toast.info{background:#2563eb}
+  @keyframes slideIn{from{transform:translateX(100px);opacity:0}to{transform:translateX(0);opacity:1}}
+  .footer{text-align:center;padding:20px;color:var(--text-secondary);font-size:0.82rem;border-top:1px solid var(--border);margin-top:20px}
+  @media(max-width:768px){.top-bar{padding:12px 16px}.top-bar h1{font-size:1rem}.container{padding:12px 8px}.stats-row{grid-template-columns:repeat(2,1fr);gap:8px}table{font-size:0.78rem}thead th,tbody td{padding:8px 6px}.title-cell{max-width:160px}.btn{padding:7px 12px;font-size:0.8rem}}
+  @media print{.top-bar,.toolbar,.filter-bar,.config-panel,.footer,.loading-overlay{display:none!important}body{background:#fff}.container{max-width:100%;padding:0}.table-wrapper{box-shadow:none;border:1px solid #ccc}}
+</style>
+</head>
+<body>
+<div class="top-bar">
+  <h1>&#x1F4CB; 北京市养老服务全业务线 · 招标监控系统</h1>
+  <span class="date-badge" id="currentDate">--</span>
+  <span style="font-size:0.85rem"><span class="status-dot offline" id="statusDot"></span><span id="statusText">待抓取</span></span>
+</div>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+  <div style="color:var(--text-secondary);font-weight:500" id="loadingMsg">正在抓取招标数据...</div>
+</div>
+
+<div class="container">
+  <div class="toolbar">
+    <button class="btn primary" onclick="fetchAllSources()" id="btnRefresh">&#x1F504; 刷新抓取</button>
+    <button class="btn" onclick="toggleConfig()">&#x2699; 配置</button>
+    <button class="btn" onclick="selectAll()">&#x2611; 全选</button>
+    <button class="btn" onclick="deselectAll()">&#x2610; 取消全选</button>
+    <button class="btn" onclick="toggleSeenFilter()" id="btnSeenFilter">&#x1F441; 隐藏已查看</button>
+    <button class="btn success" onclick="exportCSV()">&#x1F4E5; 导出CSV</button>
+    <button class="btn" onclick="sendEmail()" id="btnSendEmail">&#x1F4E7; 发送邮件</button>
+  </div>
+
+  <div class="stats-row">
+    <div class="stat-card total"><div class="stat-num" id="statTotal">0</div><div class="stat-label">&#x1F4CA; 招标总数</div></div>
+    <div class="stat-card urgent"><div class="stat-num" id="statUrgent">0</div><div class="stat-label">&#x1F534; ≤3天紧急</div></div>
+    <div class="stat-card warn"><div class="stat-num" id="statWarn">0</div><div class="stat-label">&#x1F7E0; ≤7天临近</div></div>
+    <div class="stat-card" style="border-left-color:#8b5cf6"><div class="stat-num" id="statSeen" style="color:#8b5cf6">0</div><div class="stat-label">&#x2705; 已查看</div></div>
+  </div>
+
+  <div class="filter-bar">
+    <select id="filterCategory" onchange="renderTable()" title="分类筛选">
+      <option value="all">&#x1F4C2; 全部分类</option>
+      <optgroup label="&#x2B50; 核心业务">
+        <option value="养老服务驿站">&#x1F3E0; 养老服务驿站</option>
+        <option value="社区养老">&#x1F3D8; 社区养老</option>
+        <option value="居家照护">&#x1F3E0; 居家照护</option>
+        <option value="居家养老">&#x1F475; 居家养老</option>
+        <option value="健康体检">&#x2764; 健康体检</option>
+        <option value="体检">&#x1FA7A; 体检</option>
+        <option value="老干部健康">&#x1F474; 老干部健康</option>
+        <option value="机构养老">&#x1F3E2; 机构养老</option>
+      </optgroup>
+      <optgroup label="&#x1F4C8; 成长业务">
+        <option value="医养结合">&#x1F3E5; 医养结合</option>
+        <option value="康复服务">&#x1FA7A; 康复服务</option>
+        <option value="康复评估">&#x1F4CB; 康复评估</option>
+        <option value="康复">&#x1F3E5; 康复(综合)</option>
+        <option value="适老化评估">&#x1F4DD; 适老化评估</option>
+        <option value="适老化改造">&#x1F527; 适老化改造</option>
+      </optgroup>
+      <optgroup label="&#x1F3D7; 配套业务">
+        <option value="物业管理">&#x1F3E2; 物业管理</option>
+        <option value="园林绿化">&#x1F333; 园林绿化</option>
+        <option value="餐饮服务">&#x1F37D; 餐饮服务</option>
+      </optgroup>
+      <optgroup label="&#x1F3AF; 专项业务">
+        <option value="养老护理员培训">&#x1F4DA; 护理员培训</option>
+        <option value="养老技能培训">&#x1F393; 技能培训</option>
+        <option value="长照师培训">&#x1F9D1;&#x200D;&#x2695; 长照师培训</option>
+        <option value="长期护理险">&#x1F6E1; 长护险</option>
+        <option value="巡视探访">&#x1F6B6; 巡视探访</option>
+        <option value="助浴服务">&#x1F6C1; 助浴</option>
+        <option value="家庭医疗">&#x1F3E5; 家庭医疗</option>
+        <option value="干部休养所">&#x1F3DB; 干部休养所</option>
+        <option value="残疾人服务">&#x267F; 残疾人服务</option>
+      </optgroup>
+      <optgroup label="&#x1F4CC; 其他">
+        <option value="养老">&#x1F3E0; 养老(综合)</option>
+        <option value="其他">&#x1F4CC; 其他</option>
+      </optgroup>
+    </select>
+    <select id="filterUrgency" onchange="renderTable()" title="紧急度筛选">
+      <option value="all">&#x23F0; 全部紧急度</option>
+      <option value="critical">&#x1F534; ≤3天</option>
+      <option value="warning">&#x1F7E0; ≤7天</option>
+      <option value="normal">&#x1F7E2; 正常</option>
+    </select>
+    <input type="text" id="filterSearch" placeholder="&#x1F50D; 搜索标题关键词..." oninput="renderTable()">
+  </div>
+
+  <div class="config-panel" id="configPanel">
+    <h3>&#x2699;&#xFE0F; 系统配置</h3>
+    <div class="config-row"><span class="hint">&#x1F4A1; <strong>抓取方式已升级</strong>：数据由Python后端通过服务器端抓取，无需CORS代理。如果部署在服务器上，每天上午9点自动抓取并发送邮件。</span></div>
+    <div class="config-row"><label>发件邮箱</label><input type="text" id="cfgEmailUser" placeholder="your_email@qq.com（QQ邮箱）"></div>
+    <div class="config-row"><label>邮箱授权码</label><input type="password" id="cfgEmailPass" placeholder="QQ邮箱SMTP授权码（非登录密码）"></div>
+    <div class="config-row"><label>收件邮箱</label><input type="text" id="cfgRecipient" value="1192431015@qq.com"></div>
+    <div class="config-row"><span class="hint">&#x1F4E7; <strong>如何获取QQ邮箱授权码？</strong>QQ邮箱→设置→账户→POP3/SMTP服务→开启→生成授权码。填入上方即可自动发送邮件。</span></div>
+    <div class="config-row"><button class="btn primary" onclick="saveConfig()">&#x1F4BE; 保存配置</button><button class="btn" onclick="toggleConfig()">关闭</button></div>
+  </div>
+
+  <div class="table-wrapper">
+    <div class="table-header-bar"><h2>&#x1F4D1; 招标公告列表</h2><span class="result-count" id="resultCount">共0条</span></div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th class="cb-cell">&#x2611;</th>
+          <th onclick="sortBy('title')">&#x1F4DD; 招标标题 &#x25BE;</th>
+          <th onclick="sortBy('pubDate')">&#x1F4C5; 发布时间 &#x25BE;</th>
+          <th onclick="sortBy('deadline')">&#x23F0; 截止日期 &#x25BE;</th>
+          <th onclick="sortBy('urgency')">&#x1F6A8; 紧急度 &#x25BE;</th>
+          <th onclick="sortBy('category')">&#x1F3F7; 分类 &#x25BE;</th>
+          <th onclick="sortBy('source')">&#x1F4C2; 来源 &#x25BE;</th>
+        </tr></thead>
+        <tbody id="tableBody">
+          <tr><td colspan="7"><div class="empty-state">
+            <p style="font-size:1.5rem;margin-bottom:8px">&#x1F4ED;</p>
+            <p>暂无招标数据</p><p style="font-size:0.85rem">点击「刷新抓取」获取最新公告，或先配置CORS代理</p>
+          </div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="footer">
+    <p>&#x1F4CC; 数据来源：北京市政府采购网 | 北京市公共资源交易平台 | 北京市民政局 | 北京市卫健委 | 北京市医保局 | 中国采招网 | 各区老干部局 | 军休所/退役军人事务局</p>
+    <p style="margin-top:4px;font-size:0.78rem">&#x1F4E7; 每日09:00自动抓取并邮件推送 | 覆盖社区养老·居家照护·机构养老·驿站·体检·医疗·康复·物业·园林绿化·餐饮等全业务线</p>
+  </div>
+</div>
+<div id="toastContainer"></div>
+
+<!-- ==================== 标记：JS 将在此之后追加 ==================== -->
+<script>
+/* ==================================================================
+ *  北京市养老服务全业务线招标监控系统 v2.0
+ *  纯前端方案：HTML + JS + localStorage
+ *  核心模块：ConfigManager / DataFetcher / KeywordFilter / 
+ *           SeenManager / UIRenderer / CSVExporter / EmailSender
+ * ================================================================== */
+
+// ==================== 全局状态 ====================
+let allBids = [], seenSet = new Set(), hideSeen = false;
+let sortField = 'deadline', sortAsc = true;
+
+// ==================== 关键词→分类映射（前端兜底分类，与后端保持一致） ====================
+const KEYWORD_MAP = {
+  '老干部健康':   /老干部|离退休干部|离休干部|退休干部|军休|干部保健/,
+  '干部休养所':   /干休所|军休所|军队离休|军队退休|荣军/,
+  '残疾人服务':   /残疾|残障/,
+  '长照师培训':   /长照师|长期照护师/,
+  '长期护理险':   /长护险|长期护理保险|护理保险/,
+  '巡视探访':     /巡视探访|探访|入户探/,
+  '医养结合':     /医养结合|医养融合/,
+  '养老护理员培训': /养老护理|护理员.*?培训|护工.*?培训/,
+  '养老技能培训': /养老.*?培训|老年.*?培训|技能.*?养老/,
+  '适老化评估':   /适老化评估|老年.*?能力评估|老年人.*?评估/,
+  '康复评估':     /康复评估|康复.*?评定/,
+  '适老化改造':   /适老化|适老改造|无障碍改造|居家.*?适老/,
+  '养老服务驿站': /养老.*?驿站|养老服务.*?站|日间照料/,
+  '居家照护':     /居家照护|居家护理|上门照护|上门.*?护理|家庭.*?照护/,
+  '居家养老':     /居家养老|居家.*?养老服务/,
+  '家庭医疗':     /家庭医疗|居家医疗|上门医疗|家庭医生|护士上门/,
+  '机构养老':     /机构养老|养老机构.*?运营|养老院|敬老院/,
+  '社区养老':     /社区养老|社区.*?为老|社区.*?日照|社区.*?日间|社区助老/,
+  '园林绿化':     /园林绿化|景观绿化|绿化工程|绿化养护|公园绿化/,
+  '餐饮服务':     /餐饮服务|配餐|送餐|助餐|食堂/,
+  '物业管理':     /物业(?!费|维修基金|专项维修)/,
+  '助浴服务':     /助浴|洗浴.*?服务|沐浴.*?服务/,
+  '健康体检':     /健康体检|体检服务|体检采购|健康检查|健康筛查|健康管理/,
+  '体检':         /体检/,
+  '康复服务':     /康复服务|康复治疗|康复训练|运动康复|体适能/,
+  '康复':         /康复/,
+  '养老':         /养老(?!金|保险金|保险|保障|社保)/,
+};
+
+// ==================== 后端 API 基础路径 ====================
+// 从本地 file:// 打开时自动使用服务器地址，部署到服务器时使用当前域名
+const API_BASE = window.location.protocol === 'file:'
+    ? 'http://124.220.55.169'
+    : window.location.origin;
+
+// ==================== 1. 配置管理（同步到后端） ====================
+function getConfig(){
+  try{ return JSON.parse(localStorage.getItem('bid_monitor_config')||'{}'); }catch(e){ return {}; }
+}
+function saveConfig(){
+  const cfg = {
+    email: {
+      smtp_host: 'smtp.qq.com',
+      smtp_port: 465,
+      smtp_user: document.getElementById('cfgEmailUser').value.trim(),
+      smtp_pass: document.getElementById('cfgEmailPass').value.trim(),
+      recipient: document.getElementById('cfgRecipient').value.trim() || '1192431015@qq.com'
+    }
+  };
+  localStorage.setItem('bid_monitor_config', JSON.stringify(cfg));
+  // 同步到后端
+  fetch(API_BASE+'/api/config', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(cfg)
+  }).catch(()=>{});
+  showToast('配置已保存','success');
+}
+function loadConfigToUI(){
+  const c=getConfig();
+  const ec=c.email||{};
+  document.getElementById('cfgEmailUser').value=ec.smtp_user||'';
+  document.getElementById('cfgEmailPass').value=ec.smtp_pass||'';
+  document.getElementById('cfgRecipient').value=ec.recipient||'1192431015@qq.com';
+}
+
+// ==================== 2. Toast 提示 ====================
+function showToast(msg,type='info'){
+  const c=document.getElementById('toastContainer');
+  const t=document.createElement('div');
+  t.className='toast '+type;
+  t.textContent=msg;
+  c.appendChild(t);
+  setTimeout(()=>t.remove(),3500);
+}
+
+// ==================== 3. 加载状态 ====================
+function showLoading(msg){
+  document.getElementById('loadingMsg').textContent=msg;
+  document.getElementById('loadingOverlay').classList.add('active');
+}
+function hideLoading(){
+  document.getElementById('loadingOverlay').classList.remove('active');
+}
+
+// ==================== 4. 日期工具 ====================
+function parseDate(str){
+  if(!str)return null;
+  const m=str.match(/(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})/);
+  return m?new Date(+m[1],+m[2]-1,+m[3]):null;
+}
+function formatDate(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return y+'-'+m+'-'+day;}
+
+function calcUrgency(deadlineStr){
+  const dl=parseDate(deadlineStr);
+  if(!dl)return{level:'normal',days:null,label:'未知'};
+  const now=new Date();now.setHours(0,0,0,0);dl.setHours(0,0,0,0);
+  const days=Math.ceil((dl-now)/(1000*86400));
+  if(days<0)return{level:'expired',days,label:'已过期'};
+  if(days<=3)return{level:'critical',days,label:'仅剩'+days+'天'};
+  if(days<=7)return{level:'warning',days,label:'剩余'+days+'天'};
+  return{level:'normal',days,label:days+'天'};
+}
+
+// ==================== 5. 关键词分类 ====================
+function classifyBid(title){
+  for(const [cat,regex] of Object.entries(KEYWORD_MAP)){
+    if(regex.test(title))return cat;
+  }
+  return '其他';
+}
+
+// ==================== 6. 数据抓取（调用后端 API） ====================
+async function fetchAllSources(){
+  showLoading('正在通过服务器抓取招标数据（可能需要10-30秒）...');
+  setStatus('fetching','抓取中...');
+  document.getElementById('btnRefresh').disabled=true;
+
+  try {
+    const resp = await fetch(API_BASE + '/api/fetch', { method: 'POST' });
+    const result = await resp.json();
+    
+    if (result.success) {
+      // 抓取成功后重新加载数据
+      await loadBidsFromBackend();
+      setStatus('online', '已更新 (' + allBids.length + '条)');
+      showToast('抓取完成！共 ' + allBids.length + ' 条招标公告', 'success');
+    } else {
+      setStatus('offline', '抓取失败');
+      showToast('抓取失败：' + (result.message || '未知错误'), 'error');
+    }
+  } catch (err) {
+    setStatus('offline', '连接失败');
+    showToast('无法连接到后端服务：' + err.message + '。请确认服务已启动。', 'error');
+  } finally {
+    hideLoading();
+    document.getElementById('btnRefresh').disabled = false;
+  }
+}
+
+/** 从后端加载招标数据 */
+async function loadBidsFromBackend() {
+  try {
+    const resp = await fetch(API_BASE + '/api/bids');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const bids = await resp.json();
+    if (Array.isArray(bids) && bids.length > 0) {
+      allBids = bids;
+      // 重新计算紧急度（服务端可能过期）
+      allBids.forEach(b => { b.urgency = calcUrgency(b.deadline); });
+      applySeenState();
+      renderTable();
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.warn('从后端加载数据失败:', err.message);
+    return false;
+  }
+}
+
+// ==================== 8. 缓存管理（优先从后端加载） ====================
+function saveBidsToCache(){
+  localStorage.setItem('bid_monitor_cache',JSON.stringify({
+    data: allBids,
+    updatedAt: new Date().toISOString(),
+    count: allBids.length
+  }));
+}
+function loadBidsFromCache(){
+  try{
+    const raw=localStorage.getItem('bid_monitor_cache');
+    if(!raw)return false;
+    const cache=JSON.parse(raw);
+    if(!cache.data||!Array.isArray(cache.data))return false;
+    allBids=cache.data;
+    allBids.forEach(b=>{b.urgency=calcUrgency(b.deadline);});
+    return true;
+  }catch(e){return false;}
+}
+
+// ==================== 9. "已查看"状态管理 ====================
+function loadSeenState(){
+  try{
+    const raw=localStorage.getItem('bid_monitor_seen');
+    if(raw){seenSet=new Set(JSON.parse(raw));}
+  }catch(e){seenSet=new Set();}
+}
+function saveSeenState(){
+  localStorage.setItem('bid_monitor_seen',JSON.stringify([...seenSet]));
+}
+function toggleSeen(bidId,checked){
+  if(checked)seenSet.add(bidId);else seenSet.delete(bidId);
+  saveSeenState();
+  renderTable();
+}
+function applySeenState(){
+  allBids.forEach(b=>{b.seen=seenSet.has(b.id);});
+}
+
+// ==================== 10. 表格渲染 ====================
+function getFilteredBids(){
+  const cat=document.getElementById('filterCategory').value;
+  const urg=document.getElementById('filterUrgency').value;
+  const search=document.getElementById('filterSearch').value.toLowerCase();
+  
+  return allBids.filter(b=>{
+    if(hideSeen&&b.seen)return false;
+    if(cat!=='all'&&b.category!==cat)return false;
+    if(urg!=='all'&&b.urgency.level!==urg)return false;
+    if(search&&!b.title.toLowerCase().includes(search))return false;
+    return true;
+  });
+}
+
+function renderTable(){
+  applySeenState();
+  const bids=getFilteredBids();
+  
+  // 排序
+  bids.sort((a,b)=>{
+    let va,vb;
+    switch(sortField){
+      case 'title': va=a.title;vb=b.title;break;
+      case 'pubDate': va=parseDate(a.pubDate)||new Date(0);vb=parseDate(b.pubDate)||new Date(0);break;
+      case 'deadline': va=parseDate(a.deadline)||new Date(0);vb=parseDate(b.deadline)||new Date(0);break;
+      case 'urgency': va=a.urgency.days===null?999:a.urgency.days;vb=b.urgency.days===null?999:b.urgency.days;break;
+      case 'category': va=a.category;vb=b.category;break;
+      case 'source': va=a.source;vb=b.source;break;
+      default: va=0;vb=0;
+    }
+    if(va<vb)return sortAsc?-1:1;
+    if(va>vb)return sortAsc?1:-1;
+    return 0;
+  });
+  
+  const tbody=document.getElementById('tableBody');
+  if(bids.length===0){
+    tbody.innerHTML='<tr><td colspan="7"><div class="empty-state"><p style="font-size:1.5rem;margin-bottom:8px">&#x1F4ED;</p><p>'+
+      (allBids.length===0?'暂无招标数据':'没有匹配当前筛选条件的公告')+
+      '</p><p style="font-size:0.85rem">'+(allBids.length===0?'点击「刷新抓取」获取最新公告':'尝试调整筛选条件')+'</p></div></td></tr>';
+  }else{
+    tbody.innerHTML=bids.map(b=>{
+      const urg=b.urgency;
+      const badgeClass=urg.level==='critical'?'critical':urg.level==='warning'?'warning':'normal';
+      return '<tr class="'+(b.seen?'seen':'')+'">'+
+        '<td class="cb-cell"><input type="checkbox" '+(b.seen?'checked':'')+
+        ' onchange="toggleSeen(\''+b.id+'\',this.checked)" title="标记为已查看"></td>'+
+        '<td class="title-cell"><a href="'+escapeHtml(b.url)+'" target="_blank" rel="noopener noreferrer" title="打开原文链接">'+escapeHtml(b.title)+'</a></td>'+
+        '<td>'+escapeHtml(b.pubDate)+'</td>'+
+        '<td class="deadline-cell">'+escapeHtml(b.deadline)+'</td>'+
+        '<td><span class="urgency-badge '+badgeClass+'">'+(urg.level==='critical'?'&#x1F534; ':'')+(urg.level==='warning'?'&#x1F7E0; ':'')+escapeHtml(urg.label)+'</span></td>'+
+        '<td>'+escapeHtml(b.category)+'</td>'+
+        '<td class="source-cell">'+escapeHtml(b.source)+'</td>'+
+        '</tr>';
+    }).join('');
+  }
+  
+  // 更新统计
+  const total=allBids.length;
+  const urgent=allBids.filter(b=>b.urgency.level==='critical').length;
+  const warn=allBids.filter(b=>b.urgency.level==='warning').length;
+  const seen=allBids.filter(b=>b.seen).length;
+  document.getElementById('statTotal').textContent=total;
+  document.getElementById('statUrgent').textContent=urgent;
+  document.getElementById('statWarn').textContent=warn;
+  document.getElementById('statSeen').textContent=seen;
+  document.getElementById('resultCount').textContent='共 '+bids.length+' 条（总计 '+total+' 条）';
+}
+
+function escapeHtml(str){
+  const div=document.createElement('div');
+  div.textContent=str;
+  return div.innerHTML;
+}
+
+// ==================== 11. 排序 ====================
+function sortBy(field){
+  if(sortField===field)sortAsc=!sortAsc;else{sortField=field;sortAsc=true;}
+  renderTable();
+}
+
+// ==================== 12. 全选/取消全选 ====================
+function selectAll(){
+  allBids.forEach(b=>seenSet.add(b.id));
+  saveSeenState();
+  renderTable();
+}
+function deselectAll(){
+  seenSet.clear();
+  saveSeenState();
+  renderTable();
+}
+
+// ==================== 13. 隐藏已查看 ====================
+function toggleSeenFilter(){
+  hideSeen=!hideSeen;
+  document.getElementById('btnSeenFilter').innerHTML=hideSeen?'&#x1F441;&#xFE0F; 显示全部':'&#x1F441; 隐藏已查看';
+  renderTable();
+}
+
+// ==================== 14. CSV导出 ====================
+function exportCSV(){
+  const bids=getFilteredBids();
+  if(bids.length===0){showToast('没有可导出的数据','error');return;}
+  
+  // BOM for Excel UTF-8
+  let csv='\uFEFF';
+  csv+='招标标题,发布时间,投标截止日期,紧急度,业务分类,来源,原文链接,已查看\n';
+  bids.forEach(b=>{
+    csv+='"'+b.title.replace(/"/g,'""')+'",';
+    csv+=b.pubDate+',';
+    csv+=b.deadline+',';
+    csv+=b.urgency.label+',';
+    csv+=b.category+',';
+    csv+=b.source+',';
+    csv+=b.url+',';
+    csv+=(b.seen?'是':'否')+'\n';
+  });
+  
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download='招标监控报告_'+formatDate(new Date())+'.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('CSV导出成功！','success');
+}
+
+// ==================== 15. 邮件发送（通过后端 SMTP） ====================
+function sendEmail(){
+  const cfg=getConfig();
+  const ec=cfg.email||{};
+  if(!ec.smtp_user||!ec.smtp_pass){
+    showToast('请先在「配置」中填写发件邮箱和授权码','error');
+    return;
+  }
+  
+  if(allBids.length===0){showToast('没有可发送的数据','error');return;}
+  
+  document.getElementById('btnSendEmail').disabled=true;
+  showToast('正在通过服务器发送邮件...','info');
+  
+  fetch(API_BASE+'/api/email', { method:'POST' })
+    .then(r=>r.json())
+    .then(result=>{
+      document.getElementById('btnSendEmail').disabled=false;
+      if(result.success){
+        showToast('邮件发送成功！请检查收件箱','success');
+      }else{
+        showToast('邮件发送失败：'+result.message,'error');
+      }
+    })
+    .catch(err=>{
+      document.getElementById('btnSendEmail').disabled=false;
+      showToast('请求失败：'+err.message,'error');
+    });
+}
+
+// ==================== 16. 配置面板切换 ====================
+function toggleConfig(){
+  const p=document.getElementById('configPanel');
+  p.classList.toggle('open');
+  if(p.classList.contains('open'))loadConfigToUI();
+}
+
+// ==================== 17. 状态更新 ====================
+function setStatus(status,text){
+  const dot=document.getElementById('statusDot');
+  dot.className='status-dot '+status;
+  document.getElementById('statusText').textContent=text;
+}
+
+// ==================== 18. 初始化 ====================
+async function init(){
+  document.getElementById('currentDate').textContent = formatDate(new Date());
+  loadSeenState();
+  loadConfigToUI();
+  
+  // 优先从后端加载数据
+  setStatus('fetching', '连接中...');
+  const hasBackend = await loadBidsFromBackend();
+  
+  if (!hasBackend) {
+    // 后端不可用，尝试本地缓存
+    const hasCache = loadBidsFromCache();
+    if (hasCache) {
+      setStatus('online', '缓存数据 (' + allBids.length + '条)');
+      renderTable();
+    } else {
+      setStatus('offline', '无数据');
+    }
+  } else {
+    setStatus('online', '已连接 (' + allBids.length + '条)');
+  }
+  
+  console.log('[初始化完成] 北京市招标监控系统就绪');
+  console.log('  - 数据来源：' + (hasBackend ? '后端API' : (allBids.length > 0 ? '本地缓存' : '无')));
+}
+
+// ==================== 启动 ====================
+document.addEventListener('DOMContentLoaded', init);
+console.log('💡 北京市养老服务全业务线招标监控系统 v2.0 前端就绪。后端：' + API_BASE);
+</script>
+
