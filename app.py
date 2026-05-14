@@ -63,9 +63,9 @@ DEFAULT_CONFIG = {
     'email': {
         'smtp_host': 'smtp.qq.com',
         'smtp_port': 465,
-        'smtp_user': '',
-        'smtp_pass': '',      # QQ邮箱授权码
-        'recipient': '1192431015@qq.com'
+        'smtp_user': '1298597748@qq.com',
+        'smtp_pass': 'logilkqpkklxheab',
+        'recipient': ''
     },
     'keywords': {
         # ══════════════════════════════════════════════════════════════
@@ -73,6 +73,9 @@ DEFAULT_CONFIG = {
         # 原则：宽进严出 → 关键词宽松匹配，详情页截止日期核实才是主把关
         # 顺序：最具体匹配在前 → 宽泛兜底在后（classify_bid 按迭代顺序首次命中即返回）
         # ══════════════════════════════════════════════════════════════
+
+        # ── 第〇层：废标/终止/流标公告（最优先识别，避免被宽泛关键词吞掉）──
+        '废标公告':       r'废标|终止公告|流标公告|项目终止|采购终止|废标公告|废标结果',
 
         # ── 第一层：超具体组合（避免被后续宽泛模式误吞噬）──
         '老干部健康':     r'(?:老干|军休|退休|离休).*?(?:体检|健康检查|健康体检|医疗|保健|疗养)|(?:体检|健康检查).*?(?:老干|军休|退休|离休|干部)',
@@ -183,8 +186,15 @@ NON_BIDDING_PATTERNS = (
     r'|速看|必看.*收藏|转发.*收藏|请您查收|提醒您|注意啦|告诉您|好消息|福利来了'
     # ── 非招标公告类（已中标/已签约/已验收 = 没机会投了）──
     r'|调查问卷|问卷调查|满意度|征求意见|公示.*名单|公开招聘|面试|成绩'
-    r'|中标.*公示|成交.*公示|结果.*公示|合同.*公示|合同.*公告'
-    r'|政府采购合同|采购合同.*公告|验收.*公告|验收.*公示|履约.*公示'
+    # ── 中标公告/成交公告 ──
+    r'|中标.*公示|中标.*公告|中标.*结果|成交.*公示|成交.*公告|成交.*结果|结果.*公告|结果.*公示'
+    r'|合同.*公示|合同.*公告|政府采购合同|采购合同.*公告|验收.*公告|验收.*公示|履约.*公示'
+    # ── 老年人能力综合评估（非招标项目）──
+    r'|老年人能力综合评估'
+    # ── 设备/器械采购 ──
+    r'|设备.*采购|设备.*购置|采购.*设备|购置.*设备'
+    r'|器械.*采购|器械.*购置|采购.*器械|购置.*器械'
+    r'|医疗设备|康复设备|康复器材|康复器械|辅助器具|适老设备'
     # ── 养老/福利领域资格公示（非招标，是入住资格/补贴资格等行政审核公示）──
     r'|入住资格|优待服务保障对象|拟入住|接收.*公示$'
     # ── 服务门户/查询入口 ──
@@ -324,10 +334,10 @@ def extract_deadline_from_detail(url):
         soup = make_soup(html)
         page_text = soup.get_text()
         # 组合截止日期匹配模式
-        deadline_re = r'(?:资料提交|报送材料|响应文件递交|提交投标文件|投标|报名)截止[日期时间]?\s*[:：]?\s*(\d{4}[-/年]\d{1,2}[-/月]\d{1,2})'
+        deadline_re = r'(?:资料提交|报送材料|响应文件递交|提交投标文件|投标|报名)截止[日期时间]{0,2}\s*[:：]?\s*(\d{4}[-/年]\d{1,2}[-/月]\d{1,2})'
         m = re.search(deadline_re, page_text)
         if not m:
-            m = re.search(r'截止[日期时间]?\s*[:：]?\s*(\d{4}[-/年]\d{1,2}[-/月]\d{1,2})', page_text)
+            m = re.search(r'截止[日期时间]{0,2}\s*[:：]?\s*(\d{4}[-/年]\d{1,2}[-/月]\d{1,2})', page_text)
         if m:
             pd = parse_date(m.group(1))
             if pd:
@@ -353,6 +363,48 @@ def extract_deadline_from_detail(url):
         logging.warning(f'提取详情页截止日期失败 {url}: {e}')
         DETAIL_CACHE[url] = (now, None)
         return None
+
+
+# 废标原因提取缓存
+CANCEL_REASON_CACHE = {}
+
+def extract_cancel_reason_from_detail(url):
+    """从详情页提取废标/终止原因"""
+    now = datetime.now()
+    if url in CANCEL_REASON_CACHE:
+        ct, cr = CANCEL_REASON_CACHE[url]
+        if now - ct < CACHE_DURATION:
+            return cr
+    try:
+        html = fetch_page(url, timeout=12, verify=False)
+        soup = make_soup(html)
+        page_text = soup.get_text()
+        # 常见废标原因表述模式
+        patterns = [
+            r'(?:废标原因|终止原因|废标理由|流标原因|项目废标的原因)[：:\s]*([^。；\n]{4,80})',
+            r'因([^，。；\n]{2,60})(?:，|,)\s*(?:本)?项目[^，。；]{0,10}(?:废标|终止|流标)',
+            r'([^。；\n]{2,50}(?:不足|不够|不符合|未达到)[^。；\n]{2,50})(?:[。；，,\n]|$)',
+        ]
+        for pat in patterns:
+            m = re.search(pat, page_text)
+            if m:
+                reason = m.group(1).strip()
+                # 清理长空白和多余标点
+                reason = re.sub(r'\s+', ' ', reason)
+                reason = re.sub(r'^[：:\s]+|[：:\s]+$', '', reason)
+                if len(reason) >= 4:
+                    CANCEL_REASON_CACHE[url] = (now, reason)
+                    logging.info(f'[废标原因] {url} -> {reason[:60]}')
+                    return reason
+        CANCEL_REASON_CACHE[url] = (now, None)
+        return None
+    except Exception as e:
+        logging.warning(f'提取废标原因失败 {url}: {e}')
+        CANCEL_REASON_CACHE[url] = (now, None)
+        return None
+
+
+
 
 
 
@@ -415,10 +467,21 @@ def scrape_ccgp(config):
                 if not category:
                     continue
 
+                # 优先从列表页 datetime span 取发布时间（比URL日期更准确）
                 pub_date = ''
-                um = re.search(r'/(\d{4})[-/](\d{1,2})[-/](\d{1,2})[/.]', full_url)
-                if um:
-                    pub_date = f'{um[1]}-{um[2].zfill(2)}-{um[3].zfill(2)}'
+                dt_span = a_tag.find_next('span', class_='datetime')
+                if not dt_span:
+                    dt_span = a_tag.parent.find('span', class_='datetime') if a_tag.parent else None
+                if dt_span:
+                    dt_text = dt_span.get_text(strip=True)
+                    dm = re.search(r'(\d{4}-\d{1,2}-\d{1,2})', dt_text)
+                    if dm:
+                        pub_date = dm.group(1)
+                # 兜底：从URL路径提取日期
+                if not pub_date:
+                    um = re.search(r'/(\d{4})[-/](\d{1,2})[-/](\d{1,2})[/.]', full_url)
+                    if um:
+                        pub_date = f'{um[1]}-{um[2].zfill(2)}-{um[3].zfill(2)}'
                 if not pub_date:
                     um = re.search(r'/(\d{4})/(\d{1,2})/', full_url)
                     if um:
@@ -439,6 +502,7 @@ def scrape_ccgp(config):
                     'url': full_url,
                     'pubDate': pub_date or '未知',
                     'deadline': deadline or '待确认',
+                    'cancelReason': '',
                     'source': '北京市政府采购网',
                     'category': category,
                     'urgency': calc_urgency(deadline),
@@ -524,6 +588,7 @@ def scrape_ggzy(config):
                         'url': full_url,
                         'pubDate': pub_date or '未知',
                         'deadline': deadline or '待确认',
+                        'cancelReason': '',
                         'source': '北京市公共资源交易服务平台',
                         'category': category,
                         'urgency': calc_urgency(deadline),
@@ -597,6 +662,7 @@ def scrape_laoganbu(config):
                             'url': full_url,
                             'pubDate': '未知',
                             'deadline': '待确认',
+                            'cancelReason': '',
                             'source': name,
                             'category': category,
                             'urgency': calc_urgency(''),
@@ -653,6 +719,7 @@ def scrape_junxiu(config):
                             'url': full_url,
                             'pubDate': '未知',
                             'deadline': '待确认',
+                            'cancelReason': '',
                             'source': name,
                             'category': category,
                             'urgency': calc_urgency(''),
@@ -719,6 +786,7 @@ def scrape_cebpubservice(config):
                     'url': full_url,
                     'pubDate': pub_date or '未知',
                     'deadline': deadline or '待确认',
+                    'cancelReason': '',
                     'source': '中国采招网',
                     'category': category,
                     'urgency': calc_urgency(deadline),
@@ -774,6 +842,7 @@ def scrape_ccgp_search(config):
                     'url': href,
                     'pubDate': pub_date or '未知',
                     'deadline': deadline or '待确认',
+                    'cancelReason': '',
                     'source': '中国政府采购网(搜索)',
                     'category': category,
                     'urgency': calc_urgency(deadline),
@@ -844,6 +913,7 @@ def scrape_mzj(config):
                     'url': full_url,
                     'pubDate': pub_date or '未知',
                     'deadline': deadline or '待确认',
+                    'cancelReason': '',
                     'source': '北京市民政局',
                     'category': category,
                     'urgency': calc_urgency(deadline),
@@ -897,6 +967,7 @@ def scrape_wjw(config):
                     'url': full_url,
                     'pubDate': pub_date or '未知',
                     'deadline': deadline or '待确认',
+                    'cancelReason': '',
                     'source': '北京市卫健委',
                     'category': category,
                     'urgency': calc_urgency(deadline),
@@ -950,6 +1021,7 @@ def scrape_ybj(config):
                     'url': full_url,
                     'pubDate': pub_date or '未知',
                     'deadline': deadline or '待确认',
+                    'cancelReason': '',
                     'source': '北京市医保局',
                     'category': category,
                     'urgency': calc_urgency(deadline),
@@ -1031,6 +1103,11 @@ def run_scraping():
     def _verify_deadline(b):
         """单条验证：返回 (bid_dict, is_valid, detail_dl)"""
         detail_dl = extract_deadline_from_detail(b['url'])
+        # 废标公告额外提取废标原因
+        if b.get('category') == '废标公告':
+            cancel_reason = extract_cancel_reason_from_detail(b['url'])
+            if cancel_reason:
+                b['cancelReason'] = cancel_reason
         is_valid = True
         if detail_dl:
             actual_dl = parse_date(detail_dl)
@@ -1082,9 +1159,11 @@ def build_email_html(bids):
     for b in bids[:50]:  # 邮件最多50条
         urg = b['urgency']
         color = '#fef2f2' if urg['level'] == 'critical' else ('#fffbeb' if urg['level'] == 'warning' else '#fff')
+        cancel_html = f'<span style="color:#dc2626;font-size:12px">{b.get("cancelReason","")}</span>' if b.get('cancelReason') else ''
         rows += f'''<tr style="background:{color}">
             <td><a href="{b['url']}" target="_blank">{b['title']}</a></td>
             <td>{b['pubDate']}</td><td>{b['deadline']}</td>
+            <td>{cancel_html}</td>
             <td>{'🔴' if urg['level']=='critical' else '🟠' if urg['level']=='warning' else ''}{urg['label']}</td>
             <td>{b['category']}</td><td>{b['source']}</td>
         </tr>'''
@@ -1093,7 +1172,7 @@ def build_email_html(bids):
     <h2>📋 北京市养老服务全业务线 · 招标监控日报</h2>
     <p>📅 {datetime.now().strftime("%Y-%m-%d")} | 📊 共 {total} 条 | 🔴 紧急 {urgent} 条 | 🟠 临近 {warn} 条</p>
     <table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px">
-        <tr style="background:#2563eb;color:#fff"><th>招标标题</th><th>发布时间</th><th>截止日期</th><th>紧急度</th><th>分类</th><th>来源</th></tr>
+        <tr style="background:#2563eb;color:#fff"><th>招标标题</th><th>发布时间</th><th>截止日期</th><th>废标原因</th><th>紧急度</th><th>分类</th><th>来源</th></tr>
         {rows}
     </table>
     <p style="color:#999;font-size:12px;margin-top:20px">本邮件由招标监控系统自动生成 | 查看完整报告请打开附件HTML</p>

@@ -17,6 +17,10 @@ __pycache__/
 .vscode/
 .idea/
 
+# 临时部署
+temp_upload/
+temp_deploy/
+
 # 运行时数据（每日抓取结果不提交到仓库）
 bids_data.json
 data/

@@ -63,6 +63,8 @@
   .urgency-badge.critical{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
   .urgency-badge.warning{background:#fffbeb;color:#d97706;border:1px solid #fde68a}
   .urgency-badge.normal{background:#f0fdf4;color:#059669;border:1px solid #a7f3d0}
+  .cancel-reason-cell{max-width:200px;font-size:0.8rem}
+  .cancel-badge{display:inline-block;padding:2px 8px;border-radius:4px;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;font-size:0.76rem;cursor:default;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .deadline-cell{white-space:nowrap;font-family:'SF Mono',Consolas,monospace;font-size:0.82rem}
   .source-cell{font-size:0.82rem;color:var(--text-secondary)}
   .empty-state{text-align:center;padding:60px 20px;color:var(--text-secondary)}
@@ -147,6 +149,7 @@
       </optgroup>
       <optgroup label="&#x1F4CC; 其他">
         <option value="养老">&#x1F3E0; 养老(综合)</option>
+        <option value="废标公告">&#x274C; 废标公告</option>
         <option value="其他">&#x1F4CC; 其他</option>
       </optgroup>
     </select>
@@ -162,10 +165,9 @@
   <div class="config-panel" id="configPanel">
     <h3>&#x2699;&#xFE0F; 系统配置</h3>
     <div class="config-row"><span class="hint">&#x1F4A1; <strong>抓取方式已升级</strong>：数据由Python后端通过服务器端抓取，无需CORS代理。如果部署在服务器上，每天上午9点自动抓取并发送邮件。</span></div>
-    <div class="config-row"><label>发件邮箱</label><input type="text" id="cfgEmailUser" placeholder="your_email@qq.com（QQ邮箱）"></div>
-    <div class="config-row"><label>邮箱授权码</label><input type="password" id="cfgEmailPass" placeholder="QQ邮箱SMTP授权码（非登录密码）"></div>
-    <div class="config-row"><label>收件邮箱</label><input type="text" id="cfgRecipient" value="1192431015@qq.com"></div>
-    <div class="config-row"><span class="hint">&#x1F4E7; <strong>如何获取QQ邮箱授权码？</strong>QQ邮箱→设置→账户→POP3/SMTP服务→开启→生成授权码。填入上方即可自动发送邮件。</span></div>
+    <div class="config-row" style="display:none"><label>发件邮箱</label><input type="text" id="cfgEmailUser" placeholder="your_email@qq.com（QQ邮箱）"></div>
+    <div class="config-row" style="display:none"><label>邮箱授权码</label><input type="password" id="cfgEmailPass" placeholder="QQ邮箱SMTP授权码（非登录密码）"></div>
+    <div class="config-row"><label>收件邮箱</label><input type="text" id="cfgRecipient" placeholder="请输入收件邮箱地址"></div>
     <div class="config-row"><button class="btn primary" onclick="saveConfig()">&#x1F4BE; 保存配置</button><button class="btn" onclick="toggleConfig()">关闭</button></div>
   </div>
 
@@ -178,12 +180,13 @@
           <th onclick="sortBy('title')">&#x1F4DD; 招标标题 &#x25BE;</th>
           <th onclick="sortBy('pubDate')">&#x1F4C5; 发布时间 &#x25BE;</th>
           <th onclick="sortBy('deadline')">&#x23F0; 截止日期 &#x25BE;</th>
+          <th onclick="sortBy('cancelReason')">&#x274C; 废标原因 &#x25BE;</th>
           <th onclick="sortBy('urgency')">&#x1F6A8; 紧急度 &#x25BE;</th>
           <th onclick="sortBy('category')">&#x1F3F7; 分类 &#x25BE;</th>
           <th onclick="sortBy('source')">&#x1F4C2; 来源 &#x25BE;</th>
         </tr></thead>
         <tbody id="tableBody">
-          <tr><td colspan="7"><div class="empty-state">
+          <tr><td colspan="9"><div class="empty-state">
             <p style="font-size:1.5rem;margin-bottom:8px">&#x1F4ED;</p>
             <p>暂无招标数据</p><p style="font-size:0.85rem">点击「刷新抓取」获取最新公告，或先配置CORS代理</p>
           </div></td></tr>
@@ -260,7 +263,7 @@ function saveConfig(){
       smtp_port: 465,
       smtp_user: document.getElementById('cfgEmailUser').value.trim(),
       smtp_pass: document.getElementById('cfgEmailPass').value.trim(),
-      recipient: document.getElementById('cfgRecipient').value.trim() || '1192431015@qq.com'
+      recipient: document.getElementById('cfgRecipient').value.trim()
     }
   };
   localStorage.setItem('bid_monitor_config', JSON.stringify(cfg));
@@ -277,7 +280,7 @@ function loadConfigToUI(){
   const ec=c.email||{};
   document.getElementById('cfgEmailUser').value=ec.smtp_user||'';
   document.getElementById('cfgEmailPass').value=ec.smtp_pass||'';
-  document.getElementById('cfgRecipient').value=ec.recipient||'1192431015@qq.com';
+  document.getElementById('cfgRecipient').value=ec.recipient||'';
 }
 
 // ==================== 2. Toast 提示 ====================
@@ -441,6 +444,7 @@ function renderTable(){
       case 'pubDate': va=parseDate(a.pubDate)||new Date(0);vb=parseDate(b.pubDate)||new Date(0);break;
       case 'deadline': va=parseDate(a.deadline)||new Date(0);vb=parseDate(b.deadline)||new Date(0);break;
       case 'urgency': va=a.urgency.days===null?999:a.urgency.days;vb=b.urgency.days===null?999:b.urgency.days;break;
+      case 'cancelReason': va=a.cancelReason||'';vb=b.cancelReason||'';break;
       case 'category': va=a.category;vb=b.category;break;
       case 'source': va=a.source;vb=b.source;break;
       default: va=0;vb=0;
@@ -452,7 +456,7 @@ function renderTable(){
   
   const tbody=document.getElementById('tableBody');
   if(bids.length===0){
-    tbody.innerHTML='<tr><td colspan="7"><div class="empty-state"><p style="font-size:1.5rem;margin-bottom:8px">&#x1F4ED;</p><p>'+
+    tbody.innerHTML='<tr><td colspan="9"><div class="empty-state"><p style="font-size:1.5rem;margin-bottom:8px">&#x1F4ED;</p><p>'+
       (allBids.length===0?'暂无招标数据':'没有匹配当前筛选条件的公告')+
       '</p><p style="font-size:0.85rem">'+(allBids.length===0?'点击「刷新抓取」获取最新公告':'尝试调整筛选条件')+'</p></div></td></tr>';
   }else{
@@ -465,6 +469,7 @@ function renderTable(){
         '<td class="title-cell"><a href="'+escapeHtml(b.url)+'" target="_blank" rel="noopener noreferrer" title="打开原文链接">'+escapeHtml(b.title)+'</a></td>'+
         '<td>'+escapeHtml(b.pubDate)+'</td>'+
         '<td class="deadline-cell">'+escapeHtml(b.deadline)+'</td>'+
+        '<td class="cancel-reason-cell">'+(b.cancelReason ? '<span class="cancel-badge" title="'+escapeHtml(b.cancelReason)+'">'+escapeHtml(b.cancelReason.length>30?b.cancelReason.slice(0,30)+'...':b.cancelReason)+'</span>' : '<span style="color:#ccc">—</span>')+'</td>'+
         '<td><span class="urgency-badge '+badgeClass+'">'+(urg.level==='critical'?'&#x1F534; ':'')+(urg.level==='warning'?'&#x1F7E0; ':'')+escapeHtml(urg.label)+'</span></td>'+
         '<td>'+escapeHtml(b.category)+'</td>'+
         '<td class="source-cell">'+escapeHtml(b.source)+'</td>'+
@@ -522,11 +527,12 @@ function exportCSV(){
   
   // BOM for Excel UTF-8
   let csv='\uFEFF';
-  csv+='招标标题,发布时间,投标截止日期,紧急度,业务分类,来源,原文链接,已查看\n';
+  csv+='招标标题,发布时间,投标截止日期,废标原因,紧急度,业务分类,来源,原文链接,已查看\n';
   bids.forEach(b=>{
     csv+='"'+b.title.replace(/"/g,'""')+'",';
     csv+=b.pubDate+',';
     csv+=b.deadline+',';
+    csv+='"'+(b.cancelReason||'').replace(/"/g,'""')+'",';
     csv+=b.urgency.label+',';
     csv+=b.category+',';
     csv+=b.source+',';
