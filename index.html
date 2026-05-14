@@ -181,12 +181,11 @@
           <th onclick="sortBy('pubDate')">&#x1F4C5; 发布时间 &#x25BE;</th>
           <th onclick="sortBy('deadline')">&#x23F0; 截止日期 &#x25BE;</th>
           <th onclick="sortBy('cancelReason')">&#x274C; 废标原因 &#x25BE;</th>
-          <th onclick="sortBy('urgency')">&#x1F6A8; 紧急度 &#x25BE;</th>
           <th onclick="sortBy('category')">&#x1F3F7; 分类 &#x25BE;</th>
           <th onclick="sortBy('source')">&#x1F4C2; 来源 &#x25BE;</th>
         </tr></thead>
         <tbody id="tableBody">
-          <tr><td colspan="9"><div class="empty-state">
+          <tr><td colspan="8"><div class="empty-state">
             <p style="font-size:1.5rem;margin-bottom:8px">&#x1F4ED;</p>
             <p>暂无招标数据</p><p style="font-size:0.85rem">点击「刷新抓取」获取最新公告，或先配置CORS代理</p>
           </div></td></tr>
@@ -443,7 +442,6 @@ function renderTable(){
       case 'title': va=a.title;vb=b.title;break;
       case 'pubDate': va=parseDate(a.pubDate)||new Date(0);vb=parseDate(b.pubDate)||new Date(0);break;
       case 'deadline': va=parseDate(a.deadline)||new Date(0);vb=parseDate(b.deadline)||new Date(0);break;
-      case 'urgency': va=a.urgency.days===null?999:a.urgency.days;vb=b.urgency.days===null?999:b.urgency.days;break;
       case 'cancelReason': va=a.cancelReason||'';vb=b.cancelReason||'';break;
       case 'category': va=a.category;vb=b.category;break;
       case 'source': va=a.source;vb=b.source;break;
@@ -456,13 +454,11 @@ function renderTable(){
   
   const tbody=document.getElementById('tableBody');
   if(bids.length===0){
-    tbody.innerHTML='<tr><td colspan="9"><div class="empty-state"><p style="font-size:1.5rem;margin-bottom:8px">&#x1F4ED;</p><p>'+
+    tbody.innerHTML='<tr><td colspan="8"><div class="empty-state"><p style="font-size:1.5rem;margin-bottom:8px">&#x1F4ED;</p><p>'+
       (allBids.length===0?'暂无招标数据':'没有匹配当前筛选条件的公告')+
       '</p><p style="font-size:0.85rem">'+(allBids.length===0?'点击「刷新抓取」获取最新公告':'尝试调整筛选条件')+'</p></div></td></tr>';
   }else{
     tbody.innerHTML=bids.map(b=>{
-      const urg=b.urgency;
-      const badgeClass=urg.level==='critical'?'critical':urg.level==='warning'?'warning':'normal';
       return '<tr class="'+(b.seen?'seen':'')+'">'+
         '<td class="cb-cell"><input type="checkbox" '+(b.seen?'checked':'')+
         ' onchange="toggleSeen(\''+b.id+'\',this.checked)" title="标记为已查看"></td>'+
@@ -470,7 +466,6 @@ function renderTable(){
         '<td>'+escapeHtml(b.pubDate)+'</td>'+
         '<td class="deadline-cell">'+escapeHtml(b.deadline)+'</td>'+
         '<td class="cancel-reason-cell">'+(b.cancelReason ? '<span class="cancel-badge" title="'+escapeHtml(b.cancelReason)+'">'+escapeHtml(b.cancelReason.length>30?b.cancelReason.slice(0,30)+'...':b.cancelReason)+'</span>' : '<span style="color:#ccc">—</span>')+'</td>'+
-        '<td><span class="urgency-badge '+badgeClass+'">'+(urg.level==='critical'?'&#x1F534; ':'')+(urg.level==='warning'?'&#x1F7E0; ':'')+escapeHtml(urg.label)+'</span></td>'+
         '<td>'+escapeHtml(b.category)+'</td>'+
         '<td class="source-cell">'+escapeHtml(b.source)+'</td>'+
         '</tr>';
@@ -527,13 +522,12 @@ function exportCSV(){
   
   // BOM for Excel UTF-8
   let csv='\uFEFF';
-  csv+='招标标题,发布时间,投标截止日期,废标原因,紧急度,业务分类,来源,原文链接,已查看\n';
+  csv+='招标标题,发布时间,投标截止日期,废标原因,业务分类,来源,原文链接,已查看\n';
   bids.forEach(b=>{
     csv+='"'+b.title.replace(/"/g,'""')+'",';
     csv+=b.pubDate+',';
     csv+=b.deadline+',';
     csv+='"'+(b.cancelReason||'').replace(/"/g,'""')+'",';
-    csv+=b.urgency.label+',';
     csv+=b.category+',';
     csv+=b.source+',';
     csv+=b.url+',';

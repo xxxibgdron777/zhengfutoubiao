@@ -1206,9 +1206,20 @@ def send_email_report(bids):
 
 # ============ 定时任务 ============
 def scheduled_job():
-    """每日定时任务"""
+    """每日定时任务（含5分钟超时保护）"""
     logging.info('[SCHEDULER] 定时任务触发')
-    bids = run_scraping()
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(run_scraping)
+        try:
+            bids = future.result(timeout=300)
+        except TimeoutError:
+            logging.error('[SCHEDULER] 定时任务超时（5分钟）')
+            update_scrape_progress(running=False, status='error', message='定时抓取超时')
+            return
+        except Exception as e:
+            logging.error(f'[SCHEDULER] 定时任务失败: {e}')
+            update_scrape_progress(running=False, status='error', message=str(e))
+            return
     if bids:
         send_email_report(bids)
 
@@ -1265,8 +1276,17 @@ def api_fetch():
     
     def _run():
         try:
-            bids = run_scraping()
-            update_scrape_progress(running=False, status='completed', message=f'抓取完成，共 {len(bids)} 条')
+            # 用线程池超时包装，5分钟后自动放弃
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(run_scraping)
+                try:
+                    bids = future.result(timeout=300)  # 5分钟超时
+                    update_scrape_progress(running=False, status='completed', message=f'抓取完成，共 {len(bids)} 条')
+                except TimeoutError:
+                    logging.error('[FETCH] 抓取超时（5分钟），强制终止')
+                    update_scrape_progress(running=False, status='error', message='抓取超时（5分钟），请稍后重试')
+                except Exception as e:
+                    update_scrape_progress(running=False, status='error', message=str(e))
         except Exception as e:
             update_scrape_progress(running=False, status='error', message=str(e))
     
